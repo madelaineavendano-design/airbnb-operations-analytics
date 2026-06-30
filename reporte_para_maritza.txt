@@ -1,0 +1,9 @@
+
+=========================================
+      REPORTE DIARIO DE LOGÍSTICA
+=========================================
+Departamentos reposicion: 2 (requiere 2 personas)
+Departamentos dejar listos: 1 (requiere 1 personas)
+-----------------------------------------
+TOTAL DE TRABAJADORES PARA MAÑANA: 3
+=========================================
