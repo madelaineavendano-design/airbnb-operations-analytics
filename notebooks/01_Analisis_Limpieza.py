@@ -1,4 +1,22 @@
 # Databricks notebook source
+# MAGIC %skip
+# MAGIC %sql
+# MAGIC --1. usamos el catalogo por defecto en tu workspace
+# MAGIC USE CATALOG workspace;
+# MAGIC --2. creamos un esquema exclusivo para el proyecto de maritza
+# MAGIC CREATE SCHEMA IF NOT EXISTS operaciones_airbnb;
+# MAGIC --3. creamos los volumenes para la arquitectura medallon
+# MAGIC CREATE VOLUME IF NOT EXISTS operaciones_airbnb.bronze;
+# MAGIC CREATE VOLUME IF NOT EXISTS operaciones_airbnb.silver;
+# MAGIC CREATE VOLUME IF NOT EXISTS operaciones_airbnb.gold;
+# MAGIC
+# MAGIC
+# MAGIC
+# MAGIC
+# MAGIC
+
+# COMMAND ----------
+
 #importamos todas las librerias necesarias
 import pandas as pd
 import math 
@@ -28,36 +46,64 @@ def calcular_personal_necesaria(cantidad_deptos, capacidad_max):
 # COMMAND ----------
 
 # =================================================================
-# 2. EXTRACCIÓN Y LIMPIEZA CON PANDAS
+# 2. CAPA BRONZE (Datos crudos/raw)
 # =================================================================
-#definimos la ruta donde guardamos el archivo en la nube
-ruta_archivo="/Volumes/workspace/default/datos/datos.csv"
-#usamos Pandas para leer el csv y transformarlo en una tabla(dataframe)
-df_maritza=pd.read_csv(ruta_archivo)
-#limpieza vectorizada
-df_maritza['estado']= df_maritza['estado'].str.strip().str.upper()
+#el csv original se deposita aca
+ruta_archivo="/Volumes/workspace/operaciones_airbnb/bronze/operaciones_historico_2025_2026.csv"
+#extraemos el archivo crudo exactamente como viene
+df_bronze=pd.read_csv(ruta_archivo)
+#analisis exploratorio o eda
+print("1. informacion estructural")
+df_bronze.info()
+#conteo de datos vacios por columna
+print("2. conteo de datos nulos")
+print(df_bronze.isnull().sum())
+#conteo de los diferentes estados que se escribieron
+print("3. conteo de estados")
+print(df_bronze['estado'].value_counts(dropna=False))
+
+      
+
 
 
 
 # COMMAND ----------
 
 # =================================================================
-# 3. TRANSFORMACIÓN Y CÁLCULO
+# 3. CAPA SILVER (DATOS LIMPIOS Y VALIDADOS)
 # =================================================================
-#la funcion lend() nos dice cuantas filas quedaron en estas tablas filtradas
-total_R=len(df_maritza[df_maritza['estado']=='R'])
-total_L=len(df_maritza[df_maritza['estado']=='L'])
+#Creamos una copia para no dañar los datos originales
+df_silver=df_bronze.copy()
+#A) limpieza estructural
+#eliminar filas donde el 'estado' este vacio
+df_silver.dropna(subset=['estado'], inplace=True)
+#eliminar duplicados (mismo departamento en la misma fecha)
+df_silver.drop_duplicates(subset=['departamento','fecha_operacion'], keep='last', inplace=True)
+#limpieza vectorizada
+df_silver['estado']= df_silver['estado'].str.strip().str.upper()
+#filtramos solo lo que el negocio permite
+df_silver=df_silver[df_silver['estado'].isin(['L','R', 'O'])]
+ruta_silver="/Volumes/workspace/operaciones_airbnb/silver/datos_silver.parquet"
+df_silver.to_parquet(ruta_silver, index=False)
+print("datos procesados exitosamente hasta la capa silver")
+
+
+
+
+
+# COMMAND ----------
+
+# =================================================================
+# 4. CAPA GOLD (Metricas de negocio y reportes)
+# =================================================================
+#contamos usando nuestra tabla limpia (silver)
+#la funcion len() nos dice cuantas filas quedaron en estas tablas filtradas
+total_R=len(df_silver[df_silver['estado']=='R'])
+total_L=len(df_silver[df_silver['estado']=='L'])
+#calculamos con la funcion de negocio ya cargada en memoria
 personal_R= calcular_personal_necesaria(total_R, 6)
 personal_L= calcular_personal_necesaria(total_L, 8)
 personal_total=personal_R+personal_L
-
-
-
-# COMMAND ----------
-
-# =================================================================
-# 4. CARGA (LOAD) Y CREACIÓN DE REPORTE DINÁMICO
-# =================================================================
 #1. ocupamos nuestros resultados sueltos en un diccionario estructurado
 datos_reporte={
     "tipo_limpieza":["Reposicion (R)", "Dejar listo (L)", "Total"],
@@ -69,8 +115,8 @@ df_reporte=pd.DataFrame(datos_reporte)
 #3. Lo mostramos en pantalla
 display(df_reporte)
 #inyectamos la variable de la fecha en el nombre del archivo
-ruta_salida= f"/Volumes/workspace/default/datos/reporte_{fecha_hoy}.csv"
-df_reporte.to_csv(ruta_salida, index=False)
-print(f"Exito: El reporte de hoy ha sido generado y guardado como: {ruta_salida}")
+ruta_salida= f"/Volumes/workspace/operaciones_airbnb/gold/reporte_{fecha_hoy}.parquet"
+df_reporte.to_parquet(ruta_salida, index=False)
+print(f"Exito: El reporte gold ha sido generado y guardado como: {ruta_salida}")
 
 
